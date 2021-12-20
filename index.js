@@ -1,9 +1,17 @@
 const express = require("express");
 const { MongoClient } = require("mongodb");
 const cors = require("cors");
+const admin = require("firebase-admin");
 const app = express();
 require("dotenv").config();
 const port = process.env.PORT || 5000;
+
+//firebase admin initilization
+
+const serviceAccount = require("./react-ema-john-simple-app-firebase-adminsdk-nxdw3-a70d35e19f.json");
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 ///middleware
 app.use(cors());
 app.use(express.json());
@@ -14,6 +22,19 @@ const client = new MongoClient(uri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 });
+//verify token
+async function verifyToken(req, res, next) {
+  if (req.headers?.authorization?.startsWith("Bearer ")) {
+    const idToken = req?.headers?.authorization?.split("Bearer ")[1];
+    //console.log(idToken, "lphh");
+
+    try {
+      const decodeUser = await admin.auth().verifyIdToken(idToken);
+      req.decodedUserEmail = decodeUser.email;
+    } catch {}
+  }
+  next();
+}
 
 // connection fun and operation
 
@@ -50,9 +71,24 @@ async function run() {
       const products = await productsCollection.find(query).toArray();
       res.json(products);
     });
+    // specifig user orders get item
+    app.get("/orders", verifyToken, async (req, res) => {
+      // console.log(req?.headers?.authorization?.startsWith(bearer), "love");
+      const email = req.query.email;
+      if (req.decodedUserEmail === email) {
+        const query = { email: email };
+        const cursor = await ordersCollection.find(query);
+        //console.log(cursor, "love");
+        const orders = await cursor.toArray();
+        res.json(orders);
+      } else if (req?.status === 401) {
+        res.json({ message: "user not authorization" });
+      }
+    });
     // post insert data
     app.post("/orders", async (req, res) => {
       const order = req.body;
+      order.createAt = new Date();
       console.log(order);
       const result = await ordersCollection.insertOne(order);
       //console.log(result);
